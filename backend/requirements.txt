@@ -106,6 +106,10 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 
+## External Data Sources
+atlassian-python-api==4.0.7
+PyGithub==2.8.1
+
 googleapis-common-protos==1.72.0
 google-cloud-storage==3.7.0
 

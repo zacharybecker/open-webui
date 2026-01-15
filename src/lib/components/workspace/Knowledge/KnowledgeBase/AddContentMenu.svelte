@@ -18,6 +18,7 @@
 
 	export let onSync: Function = () => {};
 	export let onUpload: Function = (data) => {};
+	export let onAddExternalSource: Function = () => {};
 
 	let show = false;
 </script>
@@ -107,15 +108,29 @@
 				<div class="flex items-center">{$i18n.t('Add webpage')}</div>
 			</DropdownMenu.Item>
 
-			<DropdownMenu.Item
-				class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800  rounded-xl"
-				on:click={() => {
-					onUpload({ type: 'text' });
-				}}
-			>
-				<BarsArrowUp strokeWidth="2" />
-				<div class="flex items-center">{$i18n.t('Add text content')}</div>
-			</DropdownMenu.Item>
-		</DropdownMenu.Content>
+		<DropdownMenu.Item
+			class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800  rounded-xl"
+			on:click={() => {
+				onUpload({ type: 'text' });
+			}}
+		>
+			<BarsArrowUp strokeWidth="2" />
+			<div class="flex items-center">{$i18n.t('Add text content')}</div>
+		</DropdownMenu.Item>
+
+		<DropdownMenu.Separator class="my-1 border-t border-gray-100 dark:border-gray-700" />
+
+		<DropdownMenu.Item
+			class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800  rounded-xl"
+			on:click={() => {
+				onAddExternalSource();
+			}}
+		>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+			</svg>
+			<div class="flex items-center">{$i18n.t('Connect external source')}</div>
+		</DropdownMenu.Item>
+	</DropdownMenu.Content>
 	</div>
 </Dropdown>

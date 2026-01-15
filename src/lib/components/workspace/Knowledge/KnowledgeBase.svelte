@@ -43,6 +43,8 @@
 
 	import AddContentMenu from './KnowledgeBase/AddContentMenu.svelte';
 	import AddTextContentModal from './KnowledgeBase/AddTextContentModal.svelte';
+	import DataSourcesList from './DataSources/DataSourcesList.svelte';
+	import CreateDataSourceModal from './DataSources/CreateDataSourceModal.svelte';
 
 	import SyncConfirmDialog from '../../common/ConfirmDialog.svelte';
 	import Drawer from '$lib/components/common/Drawer.svelte';
@@ -62,6 +64,7 @@
 
 	let showAddWebpageModal = false;
 	let showAddTextContentModal = false;
+	let showAddDataSourceModal = false;
 
 	let showSyncConfirmModal = false;
 	let showAccessControlModal = false;
@@ -788,6 +791,17 @@
 	}}
 />
 
+{#if knowledge}
+	<CreateDataSourceModal
+		bind:show={showAddDataSourceModal}
+		knowledgeId={knowledge.id}
+		on:created={() => {
+			// Refresh the file list when a data source is created and synced
+			init();
+		}}
+	/>
+{/if}
+
 <input
 	id="files-input"
 	bind:files={inputFiles}
@@ -925,6 +939,9 @@
 								onSync={() => {
 									showSyncConfirmModal = true;
 								}}
+								onAddExternalSource={() => {
+									showAddDataSourceModal = true;
+								}}
 							/>
 						</div>
 					{/if}
@@ -986,6 +1003,19 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- External Data Sources Section -->
+			{#if knowledge}
+				<div class="px-3.5 mb-3">
+					<DataSourcesList
+						knowledgeId={knowledge.id}
+						writeAccess={knowledge?.write_access}
+						on:changed={() => {
+							init();
+						}}
+					/>
+				</div>
+			{/if}
 
 			{#if fileItems !== null && fileItemsTotal !== null}
 				<div class="flex flex-row flex-1 gap-3 px-2.5 mt-2">

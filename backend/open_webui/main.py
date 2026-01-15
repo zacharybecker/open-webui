@@ -87,6 +87,7 @@ from open_webui.routers import (
     memories,
     models,
     knowledge,
+    data_sources,
     prompts,
     evaluations,
     tools,
@@ -624,6 +625,10 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(periodic_usage_pool_cleanup())
 
+    # Start data source sync scheduler
+    from open_webui.data_sources.scheduler import start_scheduler, stop_scheduler
+    start_scheduler(app.state)
+
     if app.state.config.ENABLE_BASE_MODELS_CACHE:
         await get_all_models(
             Request(
@@ -646,6 +651,9 @@ async def lifespan(app: FastAPI):
         )
 
     yield
+
+    # Stop data source sync scheduler
+    stop_scheduler()
 
     if hasattr(app.state, "redis_task_command_listener"):
         app.state.redis_task_command_listener.cancel()
@@ -1428,6 +1436,7 @@ app.include_router(notes.router, prefix="/api/v1/notes", tags=["notes"])
 
 app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
 app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
+app.include_router(data_sources.router, prefix="/api/v1/data_sources", tags=["data_sources"])
 app.include_router(prompts.router, prefix="/api/v1/prompts", tags=["prompts"])
 app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])
 

@@ -31,6 +31,7 @@ from open_webui.env import (
     WEBUI_AUTH,
     WEBUI_FAVICON_URL,
     WEBUI_NAME,
+    WEBUI_SECRET_KEY,
     log,
 )
 from open_webui.internal.db import Base, get_db
