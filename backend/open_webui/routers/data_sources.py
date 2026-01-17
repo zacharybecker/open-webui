@@ -24,7 +24,7 @@ from open_webui.models.data_sources import (
     DataSourceTypeInfo,
 )
 from open_webui.models.knowledge import Knowledges
-from open_webui.models.files import Files, FileForm
+from open_webui.models.files import Files, FileForm, FileUpdateForm
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.access_control import has_access
 from open_webui.utils.crypto import encrypt_credentials, decrypt_credentials, mask_credentials
@@ -425,7 +425,7 @@ def _decrypt_data_source_credentials(data_source) -> Optional[dict]:
     return decrypt_credentials(encrypted)
 
 
-async def _sync_data_source(
+def _sync_data_source(
     request: Request,
     data_source_id: str,
     user,
@@ -460,6 +460,22 @@ async def _sync_data_source(
         if not credentials:
             raise ValueError("Missing credentials")
 
+        existing_files = Knowledges.get_files_by_id(data_source.knowledge_id, db=db)
+        existing_by_external_id = {}
+        for file in existing_files:
+            meta = file.meta or {}
+            if meta.get("data_source_id") != data_source_id:
+                continue
+            external_id = meta.get("external_id")
+            if not external_id:
+                continue
+            if (
+                external_id not in existing_by_external_id
+                or file.updated_at
+                > existing_by_external_id[external_id].updated_at
+            ):
+                existing_by_external_id[external_id] = file
+
         # Fetch content
         for doc in connector.fetch_content(
             config=data_source.config or {},
@@ -467,6 +483,55 @@ async def _sync_data_source(
             last_sync_at=data_source.last_sync_at,
         ):
             try:
+                existing_file = existing_by_external_id.get(doc.external_id)
+                file_meta = {
+                    "name": doc.title,
+                    "content_type": doc.content_type,
+                    "size": len(doc.content),
+                    "external_id": doc.external_id,
+                    "external_url": doc.url,
+                    "data_source_id": data_source_id,
+                    "source": data_source.source_type,
+                    **doc.metadata,
+                }
+
+                if existing_file:
+                    existing_data = existing_file.data or {}
+                    existing_meta = existing_file.meta or {}
+                    content_changed = existing_data.get("content") != doc.content
+                    meta_changed = any(
+                        existing_meta.get(key) != value
+                        for key, value in file_meta.items()
+                    )
+
+                    if content_changed or meta_changed:
+                        Files.update_file_by_id(
+                            existing_file.id,
+                            FileUpdateForm(
+                                data={"content": doc.content} if content_changed else None,
+                                meta=file_meta if meta_changed else None,
+                            ),
+                            db=db,
+                        )
+
+                        if content_changed:
+                            try:
+                                process_file(
+                                    request,
+                                    ProcessFileForm(
+                                        file_id=existing_file.id,
+                                        collection_name=data_source.knowledge_id,
+                                    ),
+                                    user=user,
+                                    db=db,
+                                )
+                            except Exception as e:
+                                log.warning(
+                                    f"Failed to process updated file {doc.title}: {e}"
+                                )
+                            files_updated += 1
+                    continue
+
                 # Create a file from the document content
                 file_id = str(uuid.uuid4())
 
@@ -476,16 +541,7 @@ async def _sync_data_source(
                     filename=f"{doc.title}.txt",
                     path="",
                     data={"content": doc.content},
-                    meta={
-                        "name": doc.title,
-                        "content_type": "text/plain",
-                        "size": len(doc.content),
-                        "external_id": doc.external_id,
-                        "external_url": doc.url,
-                        "data_source_id": data_source_id,
-                        "source": data_source.source_type,
-                        **doc.metadata,
-                    },
+                    meta=file_meta,
                 )
 
                 file = Files.insert_new_file(user.id, file_form, db=db)
@@ -495,7 +551,7 @@ async def _sync_data_source(
 
                 # Process file for vector DB
                 try:
-                    await process_file(
+                    process_file(
                         request,
                         ProcessFileForm(
                             file_id=file_id,
@@ -581,7 +637,7 @@ async def sync_data_source(
         )
 
     # Perform sync (could be moved to background task for large syncs)
-    result = await _sync_data_source(request, id, user, db)
+    result = _sync_data_source(request, id, user, db)
     return result
 
 
