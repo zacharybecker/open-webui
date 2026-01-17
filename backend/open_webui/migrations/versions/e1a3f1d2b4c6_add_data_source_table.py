@@ -1,7 +1,7 @@
 """Add data_source table
 
 Revision ID: e1a3f1d2b4c6
-Revises: 018012973d35
+Revises: c440947495f3
 Create Date: 2026-01-14
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "e1a3f1d2b4c6"
-down_revision = "018012973d35"
+down_revision = "c440947495f3"
 branch_labels = None
 depends_on = None
 
@@ -19,7 +19,12 @@ def upgrade():
     op.create_table(
         "data_source",
         sa.Column("id", sa.Text(), nullable=False),
-        sa.Column("knowledge_id", sa.Text(), nullable=False),
+        sa.Column(
+            "knowledge_id",
+            sa.Text(),
+            sa.ForeignKey("knowledge.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("user_id", sa.Text(), nullable=False),
         sa.Column("source_type", sa.String(50), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
@@ -32,11 +37,6 @@ def upgrade():
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(
-            ["knowledge_id"],
-            ["knowledge.id"],
-            ondelete="CASCADE",
-        ),
     )
     
     # Create indexes for common queries
