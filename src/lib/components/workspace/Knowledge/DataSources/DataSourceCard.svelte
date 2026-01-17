@@ -6,13 +6,22 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import { syncDataSource, deleteDataSource, type DataSource } from '$lib/apis/data_sources';
+	import Modal from '$lib/components/common/Modal.svelte';
+	import {
+		syncDataSource,
+		deleteDataSource,
+		updateDataSource,
+		type DataSource
+	} from '$lib/apis/data_sources';
 
 	export let dataSource: DataSource;
 	export let writeAccess: boolean = false;
 
 	let syncing = false;
 	let deleting = false;
+	let showSettingsModal = false;
+	let savingSchedule = false;
+	let selectedSyncMode = 'manual';
 
 	function formatTimestamp(timestamp: number | null): string {
 		if (!timestamp) return 'Never';
@@ -30,6 +39,11 @@
 			weekly: 'Weekly'
 		};
 		return labels[mode] || mode;
+	}
+
+	function openSettings() {
+		selectedSyncMode = (dataSource.sync_config?.sync_mode as string) || 'manual';
+		showSettingsModal = true;
 	}
 
 	function getStatusColor(status: string): string {
@@ -100,6 +114,23 @@
 			deleting = false;
 		}
 	}
+
+	async function handleSaveSchedule() {
+		savingSchedule = true;
+		try {
+			const updated = await updateDataSource(localStorage.token, dataSource.id, {
+				sync_config: { sync_mode: selectedSyncMode }
+			});
+			dataSource = updated;
+			dispatch('updated', updated);
+			toast.success($i18n.t('Sync schedule updated'));
+			showSettingsModal = false;
+		} catch (e) {
+			toast.error(`Failed to update sync schedule: ${e}`);
+		} finally {
+			savingSchedule = false;
+		}
+	}
 </script>
 
 <div
@@ -157,6 +188,23 @@
 		<!-- Actions -->
 		{#if writeAccess}
 			<div class="flex items-center gap-1 shrink-0">
+				<Tooltip content={$i18n.t('Settings')}>
+					<button
+						class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
+						on:click={openSettings}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.065 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.065c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.065-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.065z"
+							/>
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+						</svg>
+					</button>
+				</Tooltip>
+
 				<Tooltip content={$i18n.t('Sync now')}>
 					<button
 						class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -202,3 +250,59 @@
 		{/if}
 	</div>
 </div>
+
+<Modal size="sm" bind:show={showSettingsModal}>
+	<div class="px-6 py-5">
+		<div class="flex items-center justify-between mb-4">
+			<h2 class="text-lg font-semibold">{$i18n.t('Sync Schedule')}</h2>
+			<button
+				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+				on:click={() => (showSettingsModal = false)}
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+				</svg>
+			</button>
+		</div>
+
+		<div class="space-y-4">
+			<div>
+				<label class="block text-sm font-medium mb-2">{$i18n.t('Schedule')}</label>
+				<select
+					class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+					bind:value={selectedSyncMode}
+				>
+					<option value="manual">{$i18n.t('Manual only')}</option>
+					<option value="hourly">{$i18n.t('Every hour')}</option>
+					<option value="every_6_hours">{$i18n.t('Every 6 hours')}</option>
+					<option value="every_12_hours">{$i18n.t('Every 12 hours')}</option>
+					<option value="daily">{$i18n.t('Daily')}</option>
+					<option value="weekly">{$i18n.t('Weekly')}</option>
+				</select>
+				<p class="text-xs text-gray-500 mt-2">
+					{$i18n.t('Changes take effect on the next scheduled run.')}
+				</p>
+			</div>
+
+			<div class="flex justify-end gap-2">
+				<button
+					class="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+					on:click={() => (showSettingsModal = false)}
+				>
+					{$i18n.t('Cancel')}
+				</button>
+				<button
+					class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled={savingSchedule}
+					on:click={handleSaveSchedule}
+				>
+					{#if savingSchedule}
+						<Spinner className="size-4" />
+					{:else}
+						{$i18n.t('Save')}
+					{/if}
+				</button>
+			</div>
+		</div>
+	</div>
+</Modal>

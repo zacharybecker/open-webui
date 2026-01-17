@@ -46,6 +46,12 @@
 		loadDataSources();
 		dispatch('changed');
 	}
+
+	function handleUpdated(event: CustomEvent) {
+		const updated = event.detail as DataSource;
+		dataSources = dataSources.map((ds) => (ds.id === updated.id ? updated : ds));
+		dispatch('changed');
+	}
 </script>
 
 <CreateDataSourceModal
@@ -112,6 +118,7 @@
 					{dataSource}
 					{writeAccess}
 					on:synced={handleSynced}
+					on:updated={handleUpdated}
 					on:deleted={handleDeleted}
 				/>
 			{/each}
