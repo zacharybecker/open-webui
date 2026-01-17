@@ -495,7 +495,7 @@ async def _sync_data_source(
 
                 # Process file for vector DB
                 try:
-                    process_file(
+                    await process_file(
                         request,
                         ProcessFileForm(
                             file_id=file_id,

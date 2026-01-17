@@ -17,6 +17,8 @@ from open_webui.data_sources.base import (
     WebhookConfig,
 )
 
+from github import GithubException
+
 log = logging.getLogger(__name__)
 
 # File extensions to include by default
@@ -165,6 +167,50 @@ class GitHubConnector(BaseDataSourceConnector):
             },
         }
 
+    def _normalize_enterprise_url(self, enterprise_url: str) -> str:
+        """Normalize enterprise URL to base URL only."""
+        if not enterprise_url:
+            return ""
+        
+        original_url = enterprise_url
+        
+        # Remove trailing slashes
+        enterprise_url = enterprise_url.rstrip("/")
+        
+        # Remove .git suffix if present
+        if enterprise_url.endswith(".git"):
+            enterprise_url = enterprise_url[:-4]
+        
+        # Extract base URL (remove any path components)
+        # Handle both http:// and https://
+        if "://" in enterprise_url:
+            parts = enterprise_url.split("://", 1)
+            scheme = parts[0]
+            rest = parts[1]
+            # Remove any path after the domain
+            if "/" in rest:
+                rest = rest.split("/")[0]
+            enterprise_url = f"{scheme}://{rest}"
+        
+        # Log if we had to normalize
+        if original_url != enterprise_url:
+            log.debug(f"Normalized enterprise URL from '{original_url}' to '{enterprise_url}'")
+        
+        return enterprise_url
+
+    def _get_api_base_url(self, credentials: dict) -> str:
+        """Get the GitHub API base URL."""
+        enterprise_url = credentials.get("enterprise_url", "")
+        if enterprise_url:
+            normalized = self._normalize_enterprise_url(enterprise_url)
+            if normalized:
+                # For regular GitHub.com, use the standard API endpoint
+                if normalized in ("https://github.com", "http://github.com"):
+                    return "https://api.github.com"
+                # For GitHub Enterprise, use the enterprise API endpoint
+                return f"{normalized}/api/v3"
+        return "https://api.github.com"
+
     def _get_client(self, credentials: dict):
         """Get GitHub API client."""
         try:
@@ -180,21 +226,79 @@ class GitHubConnector(BaseDataSourceConnector):
         
         enterprise_url = credentials.get("enterprise_url", "")
         if enterprise_url:
-            return Github(base_url=f"{enterprise_url}/api/v3", auth=auth)
+            normalized = self._normalize_enterprise_url(enterprise_url)
+            if normalized:
+                return Github(base_url=f"{normalized}/api/v3", auth=auth)
         return Github(auth=auth)
 
     def validate_credentials(self, credentials: dict) -> CredentialValidationResult:
         try:
+            try:
+                import requests
+            except ImportError:
+                requests = None
+            
             client = self._get_client(credentials)
-            user = client.get_user()
+            
+            # Use direct API call to avoid PyGithub lazy loading issues
+            api_base = self._get_api_base_url(credentials)
+            
+            token = credentials["access_token"]
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json",
+            }
+            
+            # Make direct API call to /user endpoint
+            user_info = {}
+            if requests:
+                try:
+                    response = requests.get(f"{api_base}/user", headers=headers, timeout=10)
+                    response.raise_for_status()
+                    user_data = response.json()
+                    
+                    user_info = {
+                        "username": user_data.get("login"),
+                        "name": user_data.get("name"),
+                        "email": user_data.get("email"),
+                    }
+                except Exception as e:
+                    log.warning(f"Direct API call failed, trying PyGithub fallback: {e}")
+                    # Fallback to PyGithub approach
+                    user = client.get_user()
+                    try:
+                        user_info["username"] = user.login
+                    except (GithubException, AttributeError):
+                        user_info["username"] = None
+                    try:
+                        user_info["name"] = user.name
+                    except (GithubException, AttributeError):
+                        user_info["name"] = None
+                    try:
+                        user_info["email"] = user.email
+                    except (GithubException, AttributeError):
+                        user_info["email"] = None
+            else:
+                # Fallback to PyGithub if requests not available
+                user = client.get_user()
+                try:
+                    user_info["username"] = user.login
+                except (GithubException, AttributeError):
+                    user_info["username"] = None
+                try:
+                    user_info["name"] = user.name
+                except (GithubException, AttributeError):
+                    user_info["name"] = None
+                try:
+                    user_info["email"] = user.email
+                except (GithubException, AttributeError):
+                    user_info["email"] = None
+            
+            # If we got the user object, credentials are valid even if some properties are missing
             return CredentialValidationResult(
                 valid=True,
                 message="Successfully connected to GitHub",
-                user_info={
-                    "username": user.login,
-                    "name": user.name,
-                    "email": user.email,
-                },
+                user_info=user_info,
             )
         except ImportError as e:
             return CredentialValidationResult(valid=False, message=str(e))
@@ -209,50 +313,197 @@ class GitHubConnector(BaseDataSourceConnector):
         self, credentials: dict, search: Optional[str] = None
     ) -> list[SourceInfo]:
         try:
+            try:
+                import requests
+            except ImportError:
+                requests = None
+            
             client = self._get_client(credentials)
-            user = client.get_user()
+            
+            # Use direct API calls if requests is available, otherwise fallback to PyGithub
+            if requests:
+                # Get username first using direct API call
+                api_base = self._get_api_base_url(credentials)
+                
+                token = credentials["access_token"]
+                headers = {
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github.v3+json",
+                }
+                
+                # Get username via direct API call
+                username = None
+                try:
+                    response = requests.get(f"{api_base}/user", headers=headers, timeout=10)
+                    response.raise_for_status()
+                    user_data = response.json()
+                    username = user_data.get("login")
+                except Exception as e:
+                    log.warning(f"Could not get username via direct API: {e}")
+                    # Fallback to PyGithub
+                    try:
+                        user = client.get_user()
+                        username = user.login
+                    except (GithubException, AttributeError):
+                        pass
+                
+                if not username:
+                    log.warning("Could not determine username")
+                    return []
 
-            results = []
+                results = []
 
-            # Get user's repositories
-            repos = user.get_repos(sort="updated", direction="desc")
-
-            for repo in repos:
-                if repo.archived:
-                    continue
-
-                full_name = repo.full_name
-                name = repo.name
-
-                # Apply search filter if provided
-                if search:
-                    search_lower = search.lower()
-                    if (
-                        search_lower not in full_name.lower()
-                        and search_lower not in (repo.description or "").lower()
-                    ):
-                        continue
-
-                results.append(
-                    SourceInfo(
-                        id=full_name,
-                        name=name,
-                        description=repo.description or "",
-                        url=repo.html_url,
-                        metadata={
-                            "private": repo.private,
-                            "language": repo.language,
-                            "stars": repo.stargazers_count,
-                            "default_branch": repo.default_branch,
-                        },
-                    )
-                )
-
-                # Limit results
-                if len(results) >= 100:
-                    break
-
-            return results
+                # Fetch repositories using direct API calls with pagination
+                page = 1
+                per_page = 100
+                max_pages = 10  # Limit to prevent infinite loops
+                
+                while page <= max_pages:
+                    try:
+                        # Use direct API call to get repos
+                        params = {
+                            "sort": "updated",
+                            "direction": "desc",
+                            "per_page": per_page,
+                            "page": page,
+                        }
+                        response = requests.get(
+                            f"{api_base}/user/repos",
+                            headers=headers,
+                            params=params,
+                            timeout=10,
+                        )
+                        
+                        # Handle rate limiting
+                        if response.status_code == 404:
+                            log.warning(f"404 error fetching repositories (page {page})")
+                            break
+                        elif response.status_code == 403:
+                            log.warning("403 Forbidden - token may lack repo scope")
+                            break
+                        
+                        response.raise_for_status()
+                        repos_data = response.json()
+                        
+                        # If no repos returned, we've reached the end
+                        if not repos_data:
+                            break
+                        
+                        # Process repositories
+                        for repo_data in repos_data:
+                            try:
+                                # Skip archived repos
+                                if repo_data.get("archived", False):
+                                    continue
+                                
+                                full_name = repo_data.get("full_name", "")
+                                name = repo_data.get("name", "")
+                                
+                                if not full_name or not name:
+                                    continue
+                                
+                                # Apply search filter if provided
+                                if search:
+                                    description = repo_data.get("description", "") or ""
+                                    search_lower = search.lower()
+                                    if (
+                                        search_lower not in full_name.lower()
+                                        and search_lower not in description.lower()
+                                    ):
+                                        continue
+                                
+                                # Build metadata
+                                metadata = {
+                                    "private": repo_data.get("private", False),
+                                    "language": repo_data.get("language"),
+                                    "stars": repo_data.get("stargazers_count", 0),
+                                    "default_branch": repo_data.get("default_branch", "main"),
+                                }
+                                
+                                url = repo_data.get("html_url", f"https://github.com/{full_name}")
+                                description = repo_data.get("description", "") or ""
+                                
+                                results.append(
+                                    SourceInfo(
+                                        id=full_name,
+                                        name=name,
+                                        description=description,
+                                        url=url,
+                                        metadata=metadata,
+                                    )
+                                )
+                                
+                                # Limit results
+                                if len(results) >= 100:
+                                    return results
+                            except Exception as e:
+                                log.warning(f"Error processing repository: {e}")
+                                continue
+                        
+                        # Check if we got fewer repos than requested (last page)
+                        if len(repos_data) < per_page:
+                            break
+                        
+                        page += 1
+                    except Exception as e:
+                        log.warning(f"Error fetching repositories page {page}: {e}")
+                        break
+                
+                return results
+            else:
+                # Fallback to PyGithub if requests not available
+                try:
+                    user = client.get_user()
+                    username = None
+                    try:
+                        username = user.login
+                    except (GithubException, AttributeError):
+                        pass
+                    
+                    if not username:
+                        log.warning("Could not determine username")
+                        return []
+                    
+                    repos = user.get_repos(sort="updated", direction="desc")
+                    results = []
+                    
+                    # Limit to first 100 repos to avoid pagination issues
+                    for i, repo in enumerate(repos):
+                        if i >= 100:
+                            break
+                        try:
+                            if repo.archived:
+                                continue
+                            
+                            full_name = repo.full_name
+                            name = repo.name
+                            
+                            if search:
+                                desc = repo.description or ""
+                                if search.lower() not in full_name.lower() and search.lower() not in desc.lower():
+                                    continue
+                            
+                            results.append(
+                                SourceInfo(
+                                    id=full_name,
+                                    name=name,
+                                    description=repo.description or "",
+                                    url=repo.html_url,
+                                    metadata={
+                                        "private": repo.private,
+                                        "language": repo.language,
+                                        "stars": repo.stargazers_count,
+                                        "default_branch": repo.default_branch,
+                                    },
+                                )
+                            )
+                        except GithubException:
+                            continue
+                    
+                    return results
+                except GithubException as e:
+                    log.warning(f"PyGithub fallback failed: {e}")
+                    return []
         except Exception as e:
             log.exception(f"Failed to list GitHub repositories: {e}")
             return []
