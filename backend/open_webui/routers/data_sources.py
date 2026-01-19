@@ -5,10 +5,9 @@ Provides endpoints for CRUD operations on data sources,
 credential validation, and sync operations.
 """
 
-import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -25,7 +24,7 @@ from open_webui.models.data_sources import (
 from open_webui.models.knowledge import Knowledges
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.access_control import has_access
-from open_webui.utils.crypto import encrypt_credentials, mask_credentials
+from open_webui.utils.crypto import encrypt_credentials
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.data_sources.sync import sync_data_source as run_data_source_sync
 
@@ -33,12 +32,10 @@ from open_webui.data_sources.sync import sync_data_source as run_data_source_syn
 from open_webui.data_sources import (
     get_connector,
     get_available_source_types,
+    register_default_connectors,
 )
-from open_webui.data_sources.confluence import ConfluenceConnector
-from open_webui.data_sources.jira import JiraConnector
-from open_webui.data_sources.github import GitHubConnector
 
-log = logging.getLogger(__name__)
+register_default_connectors()
 
 router = APIRouter()
 
@@ -418,7 +415,6 @@ async def list_available_sources(
 async def sync_data_source(
     request: Request,
     id: str,
-    background_tasks: BackgroundTasks,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
 ):

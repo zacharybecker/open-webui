@@ -7,7 +7,7 @@ Provides periodic syncing of data sources based on their configured schedules.
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from open_webui.models.data_sources import DataSources, DataSourceModel

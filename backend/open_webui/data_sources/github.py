@@ -4,7 +4,6 @@ GitHub data source connector.
 Syncs content from GitHub repositories into Open WebUI knowledge bases.
 """
 
-import base64
 import logging
 from typing import Iterator, Optional
 
