@@ -59,12 +59,6 @@ class ConfluenceConnector(BaseDataSourceConnector):
                     "title": "Space Key",
                     "description": "The key of the Confluence space to sync",
                 },
-                "include_attachments": {
-                    "type": "boolean",
-                    "title": "Include Attachments",
-                    "description": "Also sync text-based attachments",
-                    "default": False,
-                },
                 "include_archived": {
                     "type": "boolean",
                     "title": "Include Archived Pages",

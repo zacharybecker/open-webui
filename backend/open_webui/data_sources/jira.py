@@ -50,12 +50,6 @@ class JiraConnector(BaseDataSourceConnector):
                     "description": "Include issue comments in the synced content",
                     "default": True,
                 },
-                "include_attachments": {
-                    "type": "boolean",
-                    "title": "Include Attachment Names",
-                    "description": "Include attachment information in metadata",
-                    "default": False,
-                },
                 "issue_limit": {
                     "type": "integer",
                     "title": "Issue Limit",

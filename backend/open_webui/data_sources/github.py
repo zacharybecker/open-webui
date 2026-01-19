@@ -321,7 +321,6 @@ class GitHubConnector(BaseDataSourceConnector):
             
             # Use direct API calls if requests is available, otherwise fallback to PyGithub
             if requests:
-                # Get username first using direct API call
                 api_base = self._get_api_base_url(credentials)
                 
                 token = credentials["access_token"]
@@ -329,26 +328,6 @@ class GitHubConnector(BaseDataSourceConnector):
                     "Authorization": f"token {token}",
                     "Accept": "application/vnd.github.v3+json",
                 }
-                
-                # Get username via direct API call
-                username = None
-                try:
-                    response = requests.get(f"{api_base}/user", headers=headers, timeout=10)
-                    response.raise_for_status()
-                    user_data = response.json()
-                    username = user_data.get("login")
-                except Exception as e:
-                    log.warning(f"Could not get username via direct API: {e}")
-                    # Fallback to PyGithub
-                    try:
-                        user = client.get_user()
-                        username = user.login
-                    except (GithubException, AttributeError):
-                        pass
-                
-                if not username:
-                    log.warning("Could not determine username")
-                    return []
 
                 results = []
 
