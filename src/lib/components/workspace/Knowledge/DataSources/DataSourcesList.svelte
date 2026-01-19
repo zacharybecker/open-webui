@@ -35,6 +35,10 @@
 		await loadDataSources();
 	});
 
+	export function openCreateModal() {
+		showCreateModal = true;
+	}
+
 	async function loadDataSources() {
 		loading = true;
 		try {
@@ -325,7 +329,7 @@
 			{#if writeAccess}
 				<button
 					class="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-					on:click={() => (showCreateModal = true)}
+					on:click={openCreateModal}
 				>
 					{$i18n.t('Connect a data source')}
 				</button>
