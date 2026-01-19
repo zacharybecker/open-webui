@@ -11,8 +11,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from open_webui.models.data_sources import DataSources, DataSourceModel
-from open_webui.utils.crypto import decrypt_credentials
-from open_webui.data_sources import get_connector
+from open_webui.models.users import Users
+from open_webui.data_sources.sync import (
+    build_internal_request,
+    sync_data_source as run_data_source_sync,
+)
 from apscheduler.triggers.cron import CronTrigger
 
 log = logging.getLogger(__name__)
@@ -103,55 +106,36 @@ async def sync_data_source_background(
                 log.debug(f"Data source {data_source_id} already syncing, skipping")
                 return
 
-            # Update status to syncing
-            DataSources.update_data_source_status(data_source_id, "syncing", db=db)
-
             try:
-                # Get connector
-                connector = get_connector(data_source.source_type)
-                if not connector:
-                    raise ValueError(f"Unknown source type: {data_source.source_type}")
+                user = Users.get_user_by_id(data_source.user_id, db=db)
+                if not user:
+                    error_message = (
+                        f"User {data_source.user_id} not found for scheduled sync"
+                    )
+                    log.warning(error_message)
+                    DataSources.update_data_source_status(
+                        data_source_id, "error", error_message, db=db
+                    )
+                    return
 
-                # Decrypt credentials
-                credentials = None
-                if data_source.credentials:
-                    encrypted = data_source.credentials.get("encrypted")
-                    if encrypted:
-                        credentials = decrypt_credentials(encrypted)
-                    else:
-                        credentials = data_source.credentials
+                request = build_internal_request(app_state)
+                result = run_data_source_sync(request, data_source_id, user, db)
 
-                if not credentials:
-                    raise ValueError("Missing credentials")
-
-                # Count synced files for logging
-                files_synced = 0
-
-                # Fetch content
-                for doc in connector.fetch_content(
-                    config=data_source.config or {},
-                    credentials=credentials,
-                    last_sync_at=data_source.last_sync_at,
-                ):
-                    # TODO: In a full implementation, we would:
-                    # 1. Create/update file records
-                    # 2. Process files for vector DB
-                    # 3. Link files to knowledge base
-                    files_synced += 1
-
-                log.info(
-                    f"Scheduled sync completed for data source {data_source_id}: "
-                    f"{files_synced} files synced"
-                )
-
-                # Update status to idle (success)
-                DataSources.update_data_source_status(data_source_id, "idle", db=db)
+                if result.success:
+                    log.info(
+                        f"Scheduled sync completed for data source {data_source_id}: "
+                        f"{result.files_synced} files synced, "
+                        f"{result.files_updated} files updated"
+                    )
+                else:
+                    log.warning(
+                        f"Scheduled sync failed for data source {data_source_id}: "
+                        f"{result.errors}"
+                    )
 
             except Exception as e:
                 log.exception(f"Scheduled sync failed for data source {data_source_id}: {e}")
-                DataSources.update_data_source_status(
-                    data_source_id, "error", str(e), db=db
-                )
+                DataSources.update_data_source_status(data_source_id, "error", str(e), db=db)
 
     except Exception as e:
         log.exception(f"Error in background sync for {data_source_id}: {e}")
