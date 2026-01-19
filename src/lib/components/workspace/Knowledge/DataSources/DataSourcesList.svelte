@@ -25,9 +25,11 @@
 	let showDetailsModal = false;
 	let selectedDataSource: DataSource | null = null;
 	let selectedSyncMode = 'manual';
+	let customCronExpression = '';
 	let savingSchedule = false;
 	let syncingById: Record<string, boolean> = {};
 	let deletingById: Record<string, boolean> = {};
+	let showCronValidation = false;
 
 	onMount(async () => {
 		await loadDataSources();
@@ -62,6 +64,8 @@
 	function openDetails(dataSource: DataSource) {
 		selectedDataSource = dataSource;
 		selectedSyncMode = (dataSource.sync_config?.sync_mode as string) || 'manual';
+		customCronExpression = (dataSource.sync_config?.cron as string) || '';
+		showCronValidation = false;
 		showDetailsModal = true;
 	}
 
@@ -100,6 +104,11 @@
 		const syncMode = (dataSource.sync_config?.sync_mode as string) || 'manual';
 		const intervalSeconds = syncIntervalSeconds[syncMode];
 
+		if (syncMode === 'custom') {
+			const cron = dataSource.sync_config?.cron as string | undefined;
+			return cron ? $i18n.t('Scheduled by cron: {{cron}}', { cron }) : $i18n.t('Custom schedule');
+		}
+
 		if (!intervalSeconds) {
 			return $i18n.t('Manual only');
 		}
@@ -118,9 +127,72 @@
 			every_6_hours: 'Every 6 hours',
 			every_12_hours: 'Every 12 hours',
 			daily: 'Daily',
-			weekly: 'Weekly'
+			weekly: 'Weekly',
+			custom: 'Custom'
 		};
 		return labels[mode] || mode;
+	}
+
+	function isValidCronExpression(expression: string): boolean {
+		const parts = expression.trim().split(/\s+/);
+		if (parts.length !== 5) return false;
+
+		return (
+			isValidCronField(parts[0], 0, 59) &&
+			isValidCronField(parts[1], 0, 23) &&
+			isValidCronField(parts[2], 1, 31) &&
+			isValidCronField(parts[3], 1, 12) &&
+			isValidCronField(parts[4], 0, 7, true)
+		);
+	}
+
+	function isValidCronField(
+		field: string,
+		min: number,
+		max: number,
+		allowSeven: boolean = false
+	): boolean {
+		const parts = field.split(',');
+		return parts.every((part) => isValidCronPart(part, min, max, allowSeven));
+	}
+
+	function isValidCronPart(
+		part: string,
+		min: number,
+		max: number,
+		allowSeven: boolean
+	): boolean {
+		if (part === '*') return true;
+
+		const [base, step] = part.split('/');
+		if (step !== undefined && !isValidCronNumber(step, 1, max)) {
+			return false;
+		}
+
+		if (base === '*') return true;
+
+		if (base.includes('-')) {
+			const [start, end] = base.split('-');
+			return (
+				isValidCronNumber(start, min, max, allowSeven) &&
+				isValidCronNumber(end, min, max, allowSeven) &&
+				parseInt(start, 10) <= parseInt(end, 10)
+			);
+		}
+
+		return isValidCronNumber(base, min, max, allowSeven);
+	}
+
+	function isValidCronNumber(
+		value: string,
+		min: number,
+		max: number,
+		allowSeven: boolean = false
+	): boolean {
+		if (!/^\d+$/.test(value)) return false;
+		const numberValue = parseInt(value, 10);
+		if (allowSeven && numberValue === 7) return true;
+		return numberValue >= min && numberValue <= max;
 	}
 
 	function getStatusTextClass(status: string): string {
@@ -184,12 +256,28 @@
 		if (!selectedDataSource) return;
 		savingSchedule = true;
 		try {
+			const trimmedCron = customCronExpression.trim();
+			if (selectedSyncMode === 'custom') {
+				showCronValidation = true;
+				if (!isValidCronExpression(trimmedCron)) {
+					return;
+				}
+			}
+
+			const syncConfig: Record<string, unknown> = {
+				sync_mode: selectedSyncMode
+			};
+			if (selectedSyncMode === 'custom') {
+				syncConfig.cron = trimmedCron;
+			}
+
 			const updated = await updateDataSource(localStorage.token, selectedDataSource.id, {
-				sync_config: { sync_mode: selectedSyncMode }
+				sync_config: syncConfig
 			});
 			dataSources = dataSources.map((ds) => (ds.id === updated.id ? updated : ds));
 			selectedDataSource = updated;
 			selectedSyncMode = (updated.sync_config?.sync_mode as string) || 'manual';
+			customCronExpression = (updated.sync_config?.cron as string) || '';
 			dispatch('changed');
 			toast.success($i18n.t('Sync schedule updated'));
 		} catch (e) {
@@ -378,16 +466,35 @@
 						<option value="every_12_hours">{$i18n.t('Every 12 hours')}</option>
 						<option value="daily">{$i18n.t('Daily')}</option>
 						<option value="weekly">{$i18n.t('Weekly')}</option>
+						<option value="custom">{$i18n.t('Custom (cron)')}</option>
 					</select>
-					<p class="text-xs text-gray-500 mt-2">
-						{$i18n.t('Changes take effect on the next scheduled run.')}
-					</p>
+					{#if selectedSyncMode === 'custom'}
+						<div class="mt-3 space-y-2">
+							<label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
+								{$i18n.t('Cron expression')}
+							</label>
+							<input
+								class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+								bind:value={customCronExpression}
+								placeholder="* 2 * * *"
+								on:input={() => (showCronValidation = true)}
+							/>
+							{#if showCronValidation && !isValidCronExpression(customCronExpression)}
+								<p class="text-xs text-red-600 dark:text-red-400">
+									{$i18n.t('Cron syntax is invalid.')}
+								</p>
+							{/if}
+							<p class="text-xs text-gray-500">
+								{$i18n.t('Format: minute hour day-of-month month day-of-week')}
+							</p>
+						</div>
+					{/if}
 				</div>
 
 				<div class="flex justify-end">
 					<button
 						class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-						disabled={savingSchedule}
+						disabled={savingSchedule || (selectedSyncMode === 'custom' && !isValidCronExpression(customCronExpression))}
 						on:click={handleSaveSchedule}
 					>
 						{#if savingSchedule}

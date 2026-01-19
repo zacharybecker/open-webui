@@ -279,9 +279,6 @@
 					<option value="daily">{$i18n.t('Daily')}</option>
 					<option value="weekly">{$i18n.t('Weekly')}</option>
 				</select>
-				<p class="text-xs text-gray-500 mt-2">
-					{$i18n.t('Changes take effect on the next scheduled run.')}
-				</p>
 			</div>
 
 			<div class="flex justify-end gap-2">

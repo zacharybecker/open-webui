@@ -13,6 +13,7 @@ from typing import Optional
 from open_webui.models.data_sources import DataSources, DataSourceModel
 from open_webui.utils.crypto import decrypt_credentials
 from open_webui.data_sources import get_connector
+from apscheduler.triggers.cron import CronTrigger
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,21 @@ def get_sync_interval_seconds(sync_mode: str) -> int:
     return intervals.get(sync_mode, 0)
 
 
+def _get_next_cron_fire_time(cron_expression: str, last_sync_at: Optional[int]) -> Optional[datetime]:
+    """Return next cron fire time after the last sync time."""
+    try:
+        trigger = CronTrigger.from_crontab(cron_expression)
+    except Exception as e:
+        log.warning(f"Invalid cron expression for data source schedule: {cron_expression} ({e})")
+        return None
+
+    last_fire_time = (
+        datetime.fromtimestamp(last_sync_at) if last_sync_at else None
+    )
+    reference_time = last_fire_time or datetime.now()
+    return trigger.get_next_fire_time(last_fire_time, reference_time)
+
+
 def should_sync_now(data_source: DataSourceModel) -> bool:
     """Check if a data source should be synced based on its schedule."""
     if not data_source.sync_config:
@@ -41,6 +57,17 @@ def should_sync_now(data_source: DataSourceModel) -> bool:
     sync_mode = data_source.sync_config.get("sync_mode", "manual")
     if sync_mode == "manual":
         return False
+
+    if sync_mode == "custom":
+        cron_expression = data_source.sync_config.get("cron")
+        if not cron_expression:
+            return False
+        next_fire_time = _get_next_cron_fire_time(
+            cron_expression, data_source.last_sync_at
+        )
+        if not next_fire_time:
+            return False
+        return datetime.now() >= next_fire_time
 
     interval = get_sync_interval_seconds(sync_mode)
     if interval == 0:
