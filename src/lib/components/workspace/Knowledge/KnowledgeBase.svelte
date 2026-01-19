@@ -1006,7 +1006,7 @@
 
 			<!-- External Data Sources Section -->
 			{#if knowledge}
-				<div class="px-3.5 mb-3">
+				<div class="px-3.5 mt-4 mb-3">
 					<DataSourcesList
 						knowledgeId={knowledge.id}
 						writeAccess={knowledge?.write_access}
