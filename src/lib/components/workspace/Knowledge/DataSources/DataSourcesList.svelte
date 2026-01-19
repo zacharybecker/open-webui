@@ -88,6 +88,29 @@
 		return date.toLocaleString();
 	}
 
+	const syncIntervalSeconds: Record<string, number> = {
+		hourly: 60 * 60,
+		every_6_hours: 6 * 60 * 60,
+		every_12_hours: 12 * 60 * 60,
+		daily: 24 * 60 * 60,
+		weekly: 7 * 24 * 60 * 60
+	};
+
+	function getNextSyncLabel(dataSource: DataSource): string {
+		const syncMode = (dataSource.sync_config?.sync_mode as string) || 'manual';
+		const intervalSeconds = syncIntervalSeconds[syncMode];
+
+		if (!intervalSeconds) {
+			return $i18n.t('Manual only');
+		}
+
+		if (!dataSource.last_sync_at) {
+			return $i18n.t('Pending');
+		}
+
+		return formatTimestamp(dataSource.last_sync_at + intervalSeconds);
+	}
+
 	function getSyncModeLabel(mode: string): string {
 		const labels: Record<string, string> = {
 			manual: 'Manual',
@@ -325,6 +348,10 @@
 				<div class="flex items-center justify-between">
 					<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Last sync')}</span>
 					<span>{formatTimestamp(selectedDataSource.last_sync_at)}</span>
+				</div>
+				<div class="flex items-center justify-between">
+					<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Next sync')}</span>
+					<span>{getNextSyncLabel(selectedDataSource)}</span>
 				</div>
 				<div class="flex items-center justify-between">
 					<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Sync Schedule')}</span>
