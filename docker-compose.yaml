@@ -23,6 +23,13 @@ services:
     environment:
       - 'OLLAMA_BASE_URL=http://ollama:11434'
       - 'WEBUI_SECRET_KEY=test-secret-key'
+      - 'ADMIN_USER_EMAIL=admin@example.com'
+      - 'ADMIN_USER_PASSWORD=admin'
+      - 'WEBUI_ADMIN_EMAIL=admin@example.com'
+      - 'WEBUI_ADMIN_PASSWORD=admin'
+      - 'WEBUI_ADMIN_NAME=Admin'
+      - 'DEBUG_MODE=True'
+      - 'DEBUG=True'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
