@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { createEventDispatcher, getContext, onMount } from 'svelte';
+	import { createEventDispatcher, getContext, onDestroy, onMount } from 'svelte';
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
@@ -31,24 +31,41 @@
 	let syncingById: Record<string, boolean> = {};
 	let deletingById: Record<string, boolean> = {};
 	let showCronValidation = false;
+	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	onMount(async () => {
 		await loadDataSources();
+		refreshInterval = setInterval(() => {
+			loadDataSources({ silent: true });
+		}, 15000);
+	});
+
+	onDestroy(() => {
+		if (refreshInterval) {
+			clearInterval(refreshInterval);
+			refreshInterval = null;
+		}
 	});
 
 	export function openCreateModal() {
 		showCreateModal = true;
 	}
 
-	async function loadDataSources() {
-		loading = true;
+	async function loadDataSources({ silent = false } = {}) {
+		if (!silent) {
+			loading = true;
+		}
 		try {
 			const result = await getDataSourcesByKnowledgeId(localStorage.token, knowledgeId);
 			dataSources = result.items;
 		} catch (e) {
-			toast.error(`Failed to load data sources: ${e}`);
+			if (!silent) {
+				toast.error(`Failed to load data sources: ${e}`);
+			}
 		} finally {
-			loading = false;
+			if (!silent) {
+				loading = false;
+			}
 		}
 	}
 
@@ -177,6 +194,9 @@
 		}
 
 		syncingById = { ...syncingById, [dataSource.id]: true };
+		dataSources = dataSources.map((ds) =>
+			ds.id === dataSource.id ? { ...ds, status: 'syncing' } : ds
+		);
 		try {
 			const result = await syncDataSource(localStorage.token, dataSource.id);
 			if (result.success) {
