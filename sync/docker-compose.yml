@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  confluence-sync:
+    build: .
+    environment:
+      # Set these environment variables or override with --env-file
+      - SPACE_KEY=${SPACE_KEY}
+      - SPACES=${SPACES}
+      - SYNC_ALL_SPACES=${SYNC_ALL_SPACES:-false}
+      - LIST_SPACES=${LIST_SPACES:-false}
+      - OPENWEBUI_URL=${OPENWEBUI_URL}
+      - API_KEY=${API_KEY}
+      - CONFLUENCE_URL=${CONFLUENCE_URL}
+      - CONFLUENCE_USERNAME=${CONFLUENCE_USERNAME}
+      - CONFLUENCE_TOKEN=${CONFLUENCE_TOKEN}
+      - KNOWLEDGE_BASE_NAME=${KNOWLEDGE_BASE_NAME:-Confluence-${SPACE_KEY}}
+      - DESCRIPTION=${DESCRIPTION}
+      - FORCE_REFRESH=${FORCE_REFRESH:-false}
+      - TRACKING_FILE=${TRACKING_FILE:-confluence_sync_tracking.json}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    command: >
+      bash -c "
+      if [ \"${LIST_SPACES}\" = \"true\" ]; then
+        python confluence_sync.py --list-spaces --confluence-url \"${CONFLUENCE_URL}\" --confluence-username \"${CONFLUENCE_USERNAME}\" --confluence-token \"${CONFLUENCE_TOKEN}\";
+      elif [ \"${SYNC_ALL_SPACES}\" = \"true\" ]; then
+        python confluence_sync.py --sync-all-spaces --openwebui-url \"${OPENWEBUI_URL}\" --api-key \"${API_KEY}\" --confluence-url \"${CONFLUENCE_URL}\" --confluence-username \"${CONFLUENCE_USERNAME}\" --confluence-token \"${CONFLUENCE_TOKEN}\" --knowledge-base-name \"${KNOWLEDGE_BASE_NAME}\" --description \"${DESCRIPTION}\" --log-level ${LOG_LEVEL} ${FORCE_REFRESH:+--force-refresh};
+      elif [ -n \"${SPACES}\" ]; then
+        python confluence_sync.py --spaces \"${SPACES}\" --openwebui-url \"${OPENWEBUI_URL}\" --api-key \"${API_KEY}\" --confluence-url \"${CONFLUENCE_URL}\" --confluence-username \"${CONFLUENCE_USERNAME}\" --confluence-token \"${CONFLUENCE_TOKEN}\" --knowledge-base-name \"${KNOWLEDGE_BASE_NAME}\" --description \"${DESCRIPTION}\" --tracking-file \"${TRACKING_FILE}\" --log-level ${LOG_LEVEL} ${FORCE_REFRESH:+--force-refresh};
+      else
+        python confluence_sync.py --space-key \"${SPACE_KEY}\" --openwebui-url \"${OPENWEBUI_URL}\" --api-key \"${API_KEY}\" --confluence-url \"${CONFLUENCE_URL}\" --confluence-username \"${CONFLUENCE_USERNAME}\" --confluence-token \"${CONFLUENCE_TOKEN}\" --knowledge-base-name \"${KNOWLEDGE_BASE_NAME}\" --description \"${DESCRIPTION}\" --tracking-file \"${TRACKING_FILE}\" --log-level ${LOG_LEVEL} ${FORCE_REFRESH:+--force-refresh};
+      fi
+      "
