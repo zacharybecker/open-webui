@@ -244,6 +244,7 @@ from open_webui.config import (
     RAG_ALLOWED_FILE_EXTENSIONS,
     RAG_FILE_MAX_COUNT,
     RAG_FILE_MAX_SIZE,
+    PDF_PAGE_THRESHOLD,
     FILE_IMAGE_COMPRESSION_WIDTH,
     FILE_IMAGE_COMPRESSION_HEIGHT,
     RAG_OPENAI_API_BASE_URL,
@@ -867,6 +868,7 @@ app.state.config.FILE_MAX_SIZE = RAG_FILE_MAX_SIZE
 app.state.config.FILE_MAX_COUNT = RAG_FILE_MAX_COUNT
 app.state.config.FILE_IMAGE_COMPRESSION_WIDTH = FILE_IMAGE_COMPRESSION_WIDTH
 app.state.config.FILE_IMAGE_COMPRESSION_HEIGHT = FILE_IMAGE_COMPRESSION_HEIGHT
+app.state.config.PDF_PAGE_THRESHOLD = PDF_PAGE_THRESHOLD
 
 
 app.state.config.RAG_FULL_CONTEXT = RAG_FULL_CONTEXT
@@ -1991,6 +1993,8 @@ async def get_app_config(request: Request):
                         "height": app.state.config.FILE_IMAGE_COMPRESSION_HEIGHT,
                     },
                 },
+                "pdf_page_threshold": app.state.config.PDF_PAGE_THRESHOLD,
+                "content_extraction_engine": app.state.config.CONTENT_EXTRACTION_ENGINE,
                 "permissions": {**app.state.config.USER_PERMISSIONS},
                 "google_drive": {
                     "client_id": GOOGLE_DRIVE_CLIENT_ID.value,

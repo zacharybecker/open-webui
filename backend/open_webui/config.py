@@ -2762,6 +2762,16 @@ RAG_FILE_MAX_SIZE = PersistentConfig(
     ),
 )
 
+PDF_PAGE_THRESHOLD = PersistentConfig(
+    "PDF_PAGE_THRESHOLD",
+    "rag.pdf_page_threshold",
+    (
+        int(os.environ.get("PDF_PAGE_THRESHOLD"))
+        if os.environ.get("PDF_PAGE_THRESHOLD")
+        else 30
+    ),
+)
+
 FILE_IMAGE_COMPRESSION_WIDTH = PersistentConfig(
     "FILE_IMAGE_COMPRESSION_WIDTH",
     "file.image_compression_width",

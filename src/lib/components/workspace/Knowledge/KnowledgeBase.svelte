@@ -33,7 +33,7 @@
 		updateKnowledgeById,
 		searchKnowledgeFilesById
 	} from '$lib/apis/knowledge';
-	import { processWeb, processYoutubeVideo } from '$lib/apis/retrieval';
+	import { processWeb, processYoutubeVideo, processFile as processFileAPI } from '$lib/apis/retrieval';
 
 	import { blobToFile, isYoutubeUrl } from '$lib/utils';
 
@@ -54,6 +54,7 @@
 	import DropdownOptions from '$lib/components/common/DropdownOptions.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import AttachWebpageModal from '$lib/components/chat/MessageInput/AttachWebpageModal.svelte';
+	import PDFProcessingOptionsDialog from '$lib/components/common/PDFProcessingOptionsDialog.svelte';
 
 	let largeScreen = true;
 
@@ -65,6 +66,10 @@
 
 	let showSyncConfirmModal = false;
 	let showAccessControlModal = false;
+	let showPDFProcessingDialog = false;
+	let pendingUploadedFileId = null;
+	let pendingPDFPageCount = 0;
+	let pendingPDFFileName = '';
 
 	let minSize = 0;
 	type Knowledge = {
@@ -247,6 +252,59 @@
 		}
 	};
 
+	const processUploadedFile = async (
+		fileId: string,
+		itemId: string,
+		processingType: string = 'normal'
+	) => {
+		try {
+			// Trigger processing via the process file endpoint
+			await processFileAPI(localStorage.token, {
+				file_id: fileId,
+				collection_name: `knowledge-${knowledge.id}`,
+				metadata: { processing_type: processingType }
+			});
+
+			// After processing, add to knowledge base
+			await addFileHandler(fileId);
+		} catch (error) {
+			console.error('Error processing file:', error);
+			toast.error($i18n.t('Failed to process file'));
+		}
+	};
+
+	const handlePDFProcessingChoice = async (event) => {
+		const choice = event.detail.choice;
+		showPDFProcessingDialog = false;
+
+		const fileId = pendingUploadedFileId;
+		const fileIndex = fileItems.findIndex((f) => f.id === fileId);
+
+		// Clear pending state
+		pendingUploadedFileId = null;
+		pendingPDFPageCount = 0;
+		pendingPDFFileName = '';
+
+		// Process the file with user's choice
+		if (fileId && fileIndex !== -1) {
+			await processUploadedFile(fileId, fileItems[fileIndex].itemId, choice);
+		}
+	};
+
+	const handlePDFProcessingCancel = () => {
+		showPDFProcessingDialog = false;
+
+		// Remove the uploaded file since user cancelled
+		const fileId = pendingUploadedFileId;
+		if (fileId) {
+			fileItems = fileItems.filter((f) => f.id !== fileId);
+		}
+
+		pendingUploadedFileId = null;
+		pendingPDFPageCount = 0;
+		pendingPDFFileName = '';
+	};
+
 	const uploadFileHandler = async (file) => {
 		console.log(file);
 
@@ -296,7 +354,18 @@
 					: {})
 			};
 
-			const uploadedFile = await uploadFile(localStorage.token, file, metadata).catch((e) => {
+			// Check if this is a PDF that should show processing choice dialog
+			let shouldCheckPageCount =
+				file.type === 'application/pdf' && ($config?.content_extraction_engine ?? '') === '';
+
+			// If PDF that might need dialog, upload without processing first to get page count
+			const shouldProcess = shouldCheckPageCount ? false : true;
+			const uploadedFile = await uploadFile(
+				localStorage.token,
+				file,
+				metadata,
+				shouldProcess
+			).catch((e) => {
 				toast.error(`${e}`);
 				return null;
 			});
@@ -314,9 +383,30 @@
 					console.warn('File upload warning:', uploadedFile.error);
 					toast.warning(uploadedFile.error);
 					fileItems = fileItems.filter((file) => file.id !== uploadedFile.id);
-				} else {
-					await addFileHandler(uploadedFile.id);
+					return;
 				}
+
+				// Check page count for PDFs
+				if (shouldCheckPageCount && uploadedFile.meta?.page_count) {
+					const pageCount = uploadedFile.meta.page_count;
+					const threshold = $config?.pdf_page_threshold ?? 30;
+
+					if (pageCount > threshold) {
+						// Show dialog - store file info
+						pendingUploadedFileId = uploadedFile.id;
+						pendingPDFPageCount = pageCount;
+						pendingPDFFileName = uploadedFile.filename;
+						showPDFProcessingDialog = true;
+						return uploadedFile;
+					} else {
+						// Page count below threshold, process and add to knowledge normally
+						await processUploadedFile(uploadedFile.id, fileItem.itemId);
+						return uploadedFile;
+					}
+				}
+
+				// Normal flow for non-PDFs
+				await addFileHandler(uploadedFile.id);
 			} else {
 				toast.error($i18n.t('Failed to upload file.'));
 			}
@@ -1103,3 +1193,11 @@
 		<Spinner className="size-5" />
 	{/if}
 </div>
+
+<PDFProcessingOptionsDialog
+	bind:show={showPDFProcessingDialog}
+	fileName={pendingPDFFileName}
+	pageCount={pendingPDFPageCount}
+	on:select={handlePDFProcessingChoice}
+	on:cancel={handlePDFProcessingCancel}
+/>

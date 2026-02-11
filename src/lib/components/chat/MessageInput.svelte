@@ -50,6 +50,7 @@
 		getWeekday
 	} from '$lib/utils';
 	import { uploadFile } from '$lib/apis/files';
+	import { processFile as processFileAPI } from '$lib/apis/retrieval';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
 	import { getSessionUser } from '$lib/apis/auths';
@@ -69,6 +70,7 @@
 	import Tooltip from '../common/Tooltip.svelte';
 	import FileItem from '../common/FileItem.svelte';
 	import Image from '../common/Image.svelte';
+	import PDFProcessingOptionsDialog from '../common/PDFProcessingOptionsDialog.svelte';
 
 	import XMark from '../icons/XMark.svelte';
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
@@ -419,6 +421,10 @@
 	let inputFiles;
 
 	let showInputModal = false;
+	let showPDFProcessingDialog = false;
+	let pendingUploadedFileId = null;
+	let pendingPDFPageCount = 0;
+	let pendingPDFFileName = '';
 
 	let dragged = false;
 	let shiftKey = false;
@@ -532,6 +538,65 @@
 		}
 	};
 
+	const processUploadedFile = async (
+		fileId: string,
+		tempItemId: string,
+		processingType: string = 'normal'
+	) => {
+		try {
+			// Find the file item
+			const fileIndex = files.findIndex((f) => f.id === fileId);
+			if (fileIndex === -1) return;
+
+			// Trigger processing via the process file endpoint
+			await processFileAPI(localStorage.token, {
+				file_id: fileId,
+				collection_name: '',
+				metadata: { processing_type: processingType }
+			});
+
+			// Update status to show processing
+			files[fileIndex].status = 'uploaded';
+			files = files;
+		} catch (error) {
+			console.error('Error processing file:', error);
+			toast.error($i18n.t('Failed to process file'));
+		}
+	};
+
+	const handlePDFProcessingChoice = async (event) => {
+		const choice = event.detail.choice;
+		showPDFProcessingDialog = false;
+
+		const fileId = pendingUploadedFileId;
+		const fileIndex = files.findIndex((f) => f.id === fileId);
+
+		// Clear pending state
+		pendingUploadedFileId = null;
+		pendingPDFPageCount = 0;
+		pendingPDFFileName = '';
+
+		// Process the file with user's choice
+		if (fileId && fileIndex !== -1) {
+			await processUploadedFile(fileId, files[fileIndex].itemId, choice);
+		}
+	};
+
+	const handlePDFProcessingCancel = () => {
+		showPDFProcessingDialog = false;
+
+		// Remove the uploaded file since user cancelled
+		const fileId = pendingUploadedFileId;
+		if (fileId) {
+			files = files.filter((f) => f.id !== fileId);
+			// Optionally: could delete file from backend here
+		}
+
+		pendingUploadedFileId = null;
+		pendingPDFPageCount = 0;
+		pendingPDFFileName = '';
+	};
+
 	const uploadFileHandler = async (file, process = true, itemData = {}) => {
 		if ($_user?.role !== 'admin' && !($_user?.permissions?.chat?.file_upload ?? true)) {
 			toast.error($i18n.t('You do not have permission to upload files.'));
@@ -578,19 +643,57 @@
 					};
 				}
 
-				// During the file upload, file content is automatically extracted.
-				const uploadedFile = await uploadFile(localStorage.token, file, metadata, process);
+				// Check if this is a PDF that should show processing choice dialog
+				let shouldCheckPageCount =
+					file.type === 'application/pdf' &&
+					process &&
+					($config?.content_extraction_engine ?? '') === '';
+
+				// If PDF that might need dialog, upload without processing first to get page count
+				const shouldProcess = shouldCheckPageCount ? false : process;
+				const uploadedFile = await uploadFile(localStorage.token, file, metadata, shouldProcess);
 
 				if (uploadedFile) {
 					console.log('File upload completed:', {
 						id: uploadedFile.id,
 						name: fileItem.name,
-						collection: uploadedFile?.meta?.collection_name
+						collection: uploadedFile?.meta?.collection_name,
+						pageCount: uploadedFile.meta?.page_count
 					});
 
 					if (uploadedFile.error) {
 						console.warn('File upload warning:', uploadedFile.error);
 						toast.warning(uploadedFile.error);
+					}
+
+					// Check page count for PDFs
+					if (shouldCheckPageCount && uploadedFile.meta?.page_count) {
+						const pageCount = uploadedFile.meta.page_count;
+						const threshold = $config?.pdf_page_threshold ?? 30;
+
+						if (pageCount > threshold) {
+							// Show dialog - store file info
+							pendingUploadedFileId = uploadedFile.id;
+							pendingPDFPageCount = pageCount;
+							pendingPDFFileName = uploadedFile.filename;
+							showPDFProcessingDialog = true;
+
+							// Update fileItem to show "uploaded, waiting for choice"
+							fileItem.status = 'uploaded';
+							fileItem.file = uploadedFile;
+							fileItem.id = uploadedFile.id;
+							fileItem.collection_name =
+								uploadedFile?.meta?.collection_name || uploadedFile?.collection_name;
+							fileItem.content_type = uploadedFile.meta?.content_type || uploadedFile.content_type;
+							fileItem.url = `${uploadedFile.id}`;
+
+							files = files;
+							return uploadedFile;
+						} else {
+							// Page count below threshold, process normally
+							await processUploadedFile(uploadedFile.id, tempItemId);
+							return uploadedFile;
+						}
 					}
 
 					fileItem.status = 'uploaded';
@@ -1886,3 +1989,11 @@
 		</div>
 	</div>
 {/if}
+
+<PDFProcessingOptionsDialog
+	bind:show={showPDFProcessingDialog}
+	fileName={pendingPDFFileName}
+	pageCount={pendingPDFPageCount}
+	on:select={handlePDFProcessingChoice}
+	on:cancel={handlePDFProcessingCancel}
+/>
