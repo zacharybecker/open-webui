@@ -27,6 +27,7 @@ import json
 import logging
 import argparse
 
+import numpy as np
 import chromadb
 from chromadb import Settings
 
@@ -172,8 +173,16 @@ def extract_from_chroma(chroma_client):
     return all_data
 
 
+def to_float_list(vector):
+    """Convert any vector type (numpy array, list of numpy floats, etc.) to a plain Python list of floats."""
+    if isinstance(vector, np.ndarray):
+        return vector.astype(float).tolist()
+    return [float(v) for v in vector]
+
+
 def adjust_vector(vector, target_length):
     """Pad or truncate a vector to the target length."""
+    vector = to_float_list(vector)
     current = len(vector)
     if current < target_length:
         return vector + [0.0] * (target_length - current)
@@ -197,8 +206,8 @@ def load_into_pgvector(session, all_data, vector_length, batch_size, dry_run):
         for i in range(0, len(items), batch_size):
             batch = items[i:i + batch_size]
             for item in batch:
-                vector = adjust_vector(list(map(float, item["vector"])), vector_length)
-                vector_str = "[" + ",".join(str(v) for v in vector) + "]"
+                vector = adjust_vector(item["vector"], vector_length)
+                vector_str = "[" + ",".join(f"{v:.8f}" for v in vector) + "]"
                 metadata_json = json.dumps(item["metadata"]) if item["metadata"] else "{}"
 
                 try:
