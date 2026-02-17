@@ -119,9 +119,20 @@ def ensure_table(session, vector_length):
     log.info("Ensured document_chunk table exists (vector dim=%d).", vector_length)
 
 
+def list_collection_names(chroma_client):
+    """Get collection names, handling both old (str) and new (Collection object) API."""
+    collections = chroma_client.list_collections()
+    if not collections:
+        return []
+    if isinstance(collections[0], str):
+        return collections
+    # Newer chromadb returns Collection objects
+    return [c.name for c in collections]
+
+
 def extract_from_chroma(chroma_client):
     """Extract all collections and their data (with embeddings) from Chroma."""
-    collection_names = chroma_client.list_collections()
+    collection_names = list_collection_names(chroma_client)
     log.info("Found %d collections in Chroma.", len(collection_names))
 
     all_data = {}
@@ -226,7 +237,7 @@ def load_into_pgvector(session, all_data, vector_length, batch_size, dry_run):
 def verify_migration(chroma_client, session):
     """Compare collection counts between Chroma and pgvector."""
     log.info("--- Verification ---")
-    collection_names = chroma_client.list_collections()
+    collection_names = list_collection_names(chroma_client)
     all_match = True
 
     for name in collection_names:
