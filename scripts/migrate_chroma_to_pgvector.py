@@ -151,9 +151,9 @@ def extract_from_chroma(chroma_client):
 
         items = []
         for i, item_id in enumerate(ids):
-            embedding = embeddings[i] if embeddings and i < len(embeddings) else None
-            document = documents[i] if documents and i < len(documents) else None
-            metadata = metadatas[i] if metadatas and i < len(metadatas) else None
+            embedding = embeddings[i] if len(embeddings) > i else None
+            document = documents[i] if len(documents) > i else None
+            metadata = metadatas[i] if len(metadatas) > i else None
 
             if embedding is None:
                 log.warning("  Skipping item '%s' in '%s': no embedding.", item_id, name)
