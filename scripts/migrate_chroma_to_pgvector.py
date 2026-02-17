@@ -197,14 +197,15 @@ def load_into_pgvector(session, all_data, vector_length, batch_size, dry_run):
         for i in range(0, len(items), batch_size):
             batch = items[i:i + batch_size]
             for item in batch:
-                vector = adjust_vector(item["vector"], vector_length)
+                vector = adjust_vector(list(map(float, item["vector"])), vector_length)
+                vector_str = "[" + ",".join(str(v) for v in vector) + "]"
                 metadata_json = json.dumps(item["metadata"]) if item["metadata"] else "{}"
 
                 try:
                     session.execute(
                         text("""
                             INSERT INTO document_chunk (id, vector, collection_name, text, vmetadata)
-                            VALUES (:id, :vector, :collection_name, :text, CAST(:metadata AS jsonb))
+                            VALUES (:id, CAST(:vector AS vector), :collection_name, :text, CAST(:metadata AS jsonb))
                             ON CONFLICT (id) DO UPDATE SET
                                 vector = EXCLUDED.vector,
                                 collection_name = EXCLUDED.collection_name,
@@ -213,7 +214,7 @@ def load_into_pgvector(session, all_data, vector_length, batch_size, dry_run):
                         """),
                         {
                             "id": item["id"],
-                            "vector": str(vector),
+                            "vector": vector_str,
                             "collection_name": collection_name,
                             "text": item["text"],
                             "metadata": metadata_json,
