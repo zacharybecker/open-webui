@@ -1633,6 +1633,7 @@ class ProcessFileForm(BaseModel):
     file_id: str
     content: Optional[str] = None
     collection_name: Optional[str] = None
+    metadata: Optional[dict] = None
 
 
 @router.post("/process/file")
@@ -1655,6 +1656,20 @@ def process_file(
 
     if file:
         try:
+            # Store processing type from metadata if provided
+            if form_data.metadata and "processing_type" in form_data.metadata:
+                processing_type = form_data.metadata.get("processing_type", "normal")
+                file_metadata = file.meta.get("data", {}) or {}
+                file_metadata["processing_type"] = processing_type
+
+                # Update file metadata in database
+                Files.update_file_meta_by_id(
+                    file.id,
+                    {"data": file_metadata},
+                    db=db
+                )
+
+                log.info(f"Processing file {file.filename} with type: {processing_type}")
 
             collection_name = form_data.collection_name
 

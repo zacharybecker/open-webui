@@ -40,6 +40,9 @@ from open_webui.models.knowledge import Knowledges
 from open_webui.models.groups import Groups
 from open_webui.models.access_grants import AccessGrants
 
+from pypdf import PdfReader
+from io import BytesIO
+
 
 from open_webui.routers.retrieval import ProcessFileForm, process_file
 from open_webui.routers.audio import transcribe
@@ -54,6 +57,16 @@ from pydantic import BaseModel
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def get_pdf_page_count(file_content: bytes) -> int:
+    """Get the number of pages in a PDF file."""
+    try:
+        pdf_reader = PdfReader(BytesIO(file_content))
+        return len(pdf_reader.pages)
+    except Exception as e:
+        log.error(f"Error reading PDF page count: {e}")
+        return 0
 
 
 ############################
@@ -275,6 +288,11 @@ def upload_file_handler(
             },
         )
 
+        # Get page count for PDFs
+        pdf_page_count = None
+        if file.content_type == "application/pdf":
+            pdf_page_count = get_pdf_page_count(contents)
+
         file_item = Files.insert_new_file(
             user.id,
             FileForm(
@@ -293,6 +311,7 @@ def upload_file_handler(
                             else None
                         ),
                         "size": len(contents),
+                        "page_count": pdf_page_count,
                         "data": file_metadata,
                     },
                 }
